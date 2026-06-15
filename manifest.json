@@ -1,0 +1,11 @@
+{
+  "name": "Nomenclate",
+  "id": "FIGMA_GENERATED",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "dist/index.html",
+  "editorType": ["figma"],
+  "networkAccess": {
+    "allowedDomains": ["https://*.vercel.app"]
+  }
+}
