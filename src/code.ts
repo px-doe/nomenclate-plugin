@@ -69,11 +69,9 @@ figma.ui.onmessage = async (msg: {
 
       const results: AuditResult[] = await response.json()
       figma.ui.postMessage({ type: 'AUDIT_RESULT', results })
-    } catch (err) {
-      figma.ui.postMessage({
-        type: 'AUDIT_ERROR',
-        message: err instanceof Error ? err.message : String(err),
-      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      figma.ui.postMessage({ type: 'audit-error', error: message });
     }
   }
 }
