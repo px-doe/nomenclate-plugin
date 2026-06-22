@@ -88,7 +88,6 @@ export default function App() {
   const [renameResult, setRenameResult] = useState<{ applied: number; failed: string[] } | null>(null)
   const [selectionChanged, setSelectionChanged] = useState(false)
   const [resultsScrollEl, setResultsScrollEl] = useState<HTMLDivElement | null>(null)
-  const [scrollAreaHeight, setScrollAreaHeight] = useState(300)
 
   const listGroups = buildGroups(components, [])
   const hasRenameTargets = auditResults.some((r) => r.status !== 'conform')
@@ -146,27 +145,7 @@ export default function App() {
     }
   }, [view, resultsScrollEl])
 
-  useEffect(() => {
-    if (view !== 'results') { setScrollAreaHeight(300); return }
-    const compute = () => {
-      const wh = window.innerHeight || 680
-      const ph = document.querySelector('[data-ph]')?.getBoundingClientRect().height ?? 0
-      const rh = document.querySelector('[data-rh]')?.getBoundingClientRect().height ?? 0
-      const rf = document.querySelector('[data-rf]')?.getBoundingClientRect().height ?? 0
-      const rb = document.querySelector('[data-rb]')?.getBoundingClientRect().height ?? 0
-      const rbMargin = rb > 0 ? 12 : 0
-      setScrollAreaHeight(Math.max(150, wh - ph - rh - rf - rb - rbMargin))
-    }
-    const id = setTimeout(compute, 16)
-    const ro = new ResizeObserver(compute)
-    ;['[data-ph]', '[data-rh]', '[data-rf]', '[data-rb]'].forEach((sel) => {
-      const el = document.querySelector(sel)
-      if (el) ro.observe(el)
-    })
-    return () => { clearTimeout(id); ro.disconnect() }
-  }, [view, selectionChanged, hasRenameTargets])
-
-  const handleAudit = () => {
+const handleAudit = () => {
     const toAudit: ComponentNode[] = []
     for (const group of listGroups) {
       if (group.kind === 'set') {
@@ -231,8 +210,8 @@ export default function App() {
   const resultGroups = buildGroups(auditedComponents, auditResults)
 
   return (
-    <div className="flex flex-col h-full bg-zinc-950 text-zinc-100 font-sans overflow-hidden select-none">
-      <header data-ph className="px-4 pt-4 pb-3 border-b border-zinc-800 flex-shrink-0">
+    <div className="flex flex-col bg-zinc-950 text-zinc-100 font-sans overflow-hidden select-none" style={{ height: '100vh' }}>
+      <header className="px-4 pt-4 pb-3 border-b border-zinc-800 flex-shrink-0">
         <h1 className="text-sm font-semibold text-zinc-100 tracking-tight leading-none">
           Nomenclate
         </h1>
@@ -368,7 +347,7 @@ export default function App() {
         {view === 'results' && (
           <>
             {/* Results header — 2 rows */}
-            <div data-rh className="flex-shrink-0 border-b border-zinc-800">
+            <div className="flex-shrink-0 border-b border-zinc-800">
               <div className="flex items-center justify-between px-4 py-2.5">
                 <button
                   onClick={handleBack}
@@ -407,7 +386,7 @@ export default function App() {
 
             {/* Selection changed banner */}
             {selectionChanged && (
-              <div data-rb className="flex-shrink-0 mx-4 mt-3 flex items-center gap-2 bg-amber-950/40 border border-amber-800/50 rounded-xl px-3 py-2.5">
+              <div className="flex-shrink-0 mx-4 mt-3 flex items-center gap-2 bg-amber-950/40 border border-amber-800/50 rounded-xl px-3 py-2.5">
                 <svg className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
@@ -418,7 +397,7 @@ export default function App() {
             )}
 
             {/* Result group cards */}
-            <div style={{ position: 'relative', height: scrollAreaHeight, flexShrink: 0 }}>
+            <div className="flex-1 min-h-0 relative" style={{ minHeight: 0 }}>
               <div
                 ref={setResultsScrollEl}
                 tabIndex={-1}
@@ -441,7 +420,7 @@ export default function App() {
 
             {/* Apply footer */}
             {hasRenameTargets && (
-              <div data-rf className="flex-shrink-0 px-4 pb-4 pt-2 border-t border-zinc-800 flex flex-col gap-2">
+              <div className="flex-shrink-0 px-4 pb-4 pt-2 border-t border-zinc-800 flex flex-col gap-2">
                 <p className="text-[10px] text-zinc-600 leading-snug">
                   Check the names you want to rename, edit suggestions if needed, then apply.
                 </p>
@@ -486,8 +465,10 @@ export default function App() {
 }
 
 function CustomScrollbar({ scrollEl }: { scrollEl: HTMLDivElement | null }) {
-  const [thumbStyle, setThumbStyle] = useState<{ height: string; top: string }>({ height: '100%', top: '0px' })
+  const [thumbTop, setThumbTop] = useState(0)
+  const [thumbHeight, setThumbHeight] = useState(0)
   const [visible, setVisible] = useState(false)
+  const drag = useRef<{ startY: number; startScrollTop: number; maxThumbTop: number; maxScrollTop: number } | null>(null)
 
   useEffect(() => {
     if (!scrollEl) return
@@ -495,10 +476,10 @@ function CustomScrollbar({ scrollEl }: { scrollEl: HTMLDivElement | null }) {
       const { scrollTop, scrollHeight, clientHeight } = scrollEl
       if (scrollHeight <= clientHeight) { setVisible(false); return }
       setVisible(true)
-      const thumbH = Math.max(32, (clientHeight / scrollHeight) * clientHeight)
-      const maxThumbTop = clientHeight - thumbH
-      const thumbTop = (scrollTop / (scrollHeight - clientHeight)) * maxThumbTop
-      setThumbStyle({ height: `${thumbH}px`, top: `${thumbTop}px` })
+      const th = Math.max(32, (clientHeight / scrollHeight) * clientHeight)
+      const maxTop = clientHeight - th
+      setThumbHeight(th)
+      setThumbTop((scrollTop / (scrollHeight - clientHeight)) * maxTop)
     }
     scrollEl.addEventListener('scroll', update)
     const ro = new ResizeObserver(update)
@@ -507,34 +488,45 @@ function CustomScrollbar({ scrollEl }: { scrollEl: HTMLDivElement | null }) {
     return () => { scrollEl.removeEventListener('scroll', update); ro.disconnect() }
   }, [scrollEl])
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!scrollEl) return
     e.preventDefault()
-    const startY = e.clientY
-    const startScrollTop = scrollEl.scrollTop
+    e.currentTarget.setPointerCapture(e.pointerId)
     const { scrollHeight, clientHeight } = scrollEl
-    const thumbH = Math.max(32, (clientHeight / scrollHeight) * clientHeight)
-    const maxThumbTop = clientHeight - thumbH
-    const maxScrollTop = scrollHeight - clientHeight
-    const onMove = (me: MouseEvent) => {
-      const delta = ((me.clientY - startY) / maxThumbTop) * maxScrollTop
-      scrollEl.scrollTop = Math.max(0, Math.min(maxScrollTop, startScrollTop + delta))
+    const th = Math.max(32, (clientHeight / scrollHeight) * clientHeight)
+    drag.current = {
+      startY: e.clientY,
+      startScrollTop: scrollEl.scrollTop,
+      maxThumbTop: clientHeight - th,
+      maxScrollTop: scrollHeight - clientHeight,
     }
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+  }
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current || !scrollEl) return
+    const { startY, startScrollTop, maxThumbTop, maxScrollTop } = drag.current
+    scrollEl.scrollTop = Math.max(0, Math.min(maxScrollTop, startScrollTop + ((e.clientY - startY) / maxThumbTop) * maxScrollTop))
+  }
+
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    drag.current = null
+    e.currentTarget.releasePointerCapture(e.pointerId)
   }
 
   if (!visible) return null
+
   return (
-    <div className="absolute right-1 top-2 bottom-2 w-1.5 rounded-full bg-zinc-800/50" style={{ pointerEvents: 'none' }}>
+    <div style={{ position: 'absolute', right: 3, top: 6, bottom: 6, width: 6, borderRadius: 3, background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }}>
       <div
-        className="absolute left-0 right-0 rounded-full bg-zinc-600 hover:bg-zinc-400 cursor-grab active:cursor-grabbing transition-colors"
-        style={{ ...thumbStyle, pointerEvents: 'auto' }}
-        onMouseDown={handleMouseDown}
+        style={{
+          position: 'absolute', left: 0, right: 0,
+          top: thumbTop, height: thumbHeight,
+          borderRadius: 3, background: 'rgba(255,255,255,0.3)',
+          cursor: 'grab', pointerEvents: 'auto', touchAction: 'none',
+        }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
       />
     </div>
   )
