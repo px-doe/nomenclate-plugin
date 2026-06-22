@@ -19,22 +19,37 @@ type AuditResult = {
   justification: string
 }
 
-const nodes = figma.currentPage.findAll(
-  (node) => node.type === 'COMPONENT' || node.type === 'COMPONENT_SET'
-)
+function getSelectionComponents(): ComponentData[] {
+  const result: ComponentData[] = []
+  for (const node of figma.currentPage.selection) {
+    if (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET') {
+      result.push({ id: node.id, name: node.name, type: node.type })
+      if (node.type === 'COMPONENT_SET') {
+        for (const child of (node as ComponentSetNode).children) {
+          if (child.type === 'COMPONENT') {
+            result.push({ id: child.id, name: child.name, type: 'COMPONENT' })
+          }
+        }
+      }
+    }
+  }
+  return result
+}
 
-const components: ComponentData[] = nodes.map((node) => ({
-  id: node.id,
-  name: node.name,
-  type: node.type as 'COMPONENT' | 'COMPONENT_SET',
-}))
+const allSelected = getSelectionComponents()
 
-figma.ui.postMessage({ type: 'COMPONENTS_LOADED', components })
+if (allSelected.length === 0) {
+  figma.ui.postMessage({ type: 'SELECTION_ERROR', message: 'Select at least one component' })
+} else {
+  const components = allSelected.slice(0, MAX_COMPONENTS)
+  figma.ui.postMessage({ type: 'COMPONENTS_LOADED', components, total: allSelected.length })
+}
 
 figma.ui.onmessage = async (msg: {
   type: string
   convention?: string
   components?: ComponentData[]
+  renames?: { id: string; newName: string }[]
 }) => {
   if (msg.type === 'CLOSE') {
     figma.closePlugin()
@@ -70,8 +85,26 @@ figma.ui.onmessage = async (msg: {
       const results: AuditResult[] = await response.json()
       figma.ui.postMessage({ type: 'AUDIT_RESULT', results })
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      figma.ui.postMessage({ type: 'audit-error', error: message });
+      const message = error instanceof Error ? error.message : String(error)
+      figma.ui.postMessage({ type: 'AUDIT_ERROR', message })
     }
+  }
+
+  if (msg.type === 'apply-rename') {
+    const renames = msg.renames ?? []
+    let applied = 0
+    const failed: string[] = []
+
+    for (const { id, newName } of renames) {
+      const node = figma.getNodeById(id)
+      if (!node) {
+        failed.push(newName)
+        continue
+      }
+      node.name = newName
+      applied++
+    }
+
+    figma.ui.postMessage({ type: 'RENAME_RESULT', applied, failed })
   }
 }

@@ -18,9 +18,11 @@ type Convention = 'tailwind' | 'material3' | 'atlassian' | 'polaris' | 'atomic'
 type View = 'list' | 'results'
 
 type PluginMessage =
-  | { type: 'COMPONENTS_LOADED'; components: ComponentNode[] }
+  | { type: 'COMPONENTS_LOADED'; components: ComponentNode[]; total: number }
+  | { type: 'SELECTION_ERROR'; message: string }
   | { type: 'AUDIT_RESULT'; results: AuditResult[] }
   | { type: 'AUDIT_ERROR'; message: string }
+  | { type: 'RENAME_RESULT'; applied: number; failed: string[] }
 
 const CONVENTION_OPTIONS: { value: Convention; label: string; available: boolean }[] = [
   { value: 'tailwind', label: 'Tailwind CSS', available: true },
@@ -30,16 +32,19 @@ const CONVENTION_OPTIONS: { value: Convention; label: string; available: boolean
   { value: 'atomic', label: 'Atomic Design', available: false },
 ]
 
-const MAX_AUDIT = 50
-
 export default function App() {
   const [components, setComponents] = useState<ComponentNode[]>([])
+  const [totalComponents, setTotalComponents] = useState(0)
   const [loaded, setLoaded] = useState(false)
+  const [selectionError, setSelectionError] = useState<string | null>(null)
   const [convention, setConvention] = useState<Convention>('tailwind')
   const [view, setView] = useState<View>('list')
   const [isAuditing, setIsAuditing] = useState(false)
   const [auditResults, setAuditResults] = useState<AuditResult[]>([])
   const [auditError, setAuditError] = useState<string | null>(null)
+  const [checked, setChecked] = useState<Record<string, boolean>>({})
+  const [editedNames, setEditedNames] = useState<Record<string, string>>({})
+  const [renameResult, setRenameResult] = useState<{ applied: number; failed: string[] } | null>(null)
 
   useEffect(() => {
     window.onmessage = (event: MessageEvent) => {
@@ -48,14 +53,31 @@ export default function App() {
 
       if (msg.type === 'COMPONENTS_LOADED') {
         setComponents(msg.components)
+        setTotalComponents(msg.total)
+        setLoaded(true)
+      } else if (msg.type === 'SELECTION_ERROR') {
+        setSelectionError(msg.message)
         setLoaded(true)
       } else if (msg.type === 'AUDIT_RESULT') {
-        setAuditResults(msg.results)
+        const results = msg.results
+        const initialChecked: Record<string, boolean> = {}
+        const initialNames: Record<string, string> = {}
+        for (const r of results) {
+          if (r.status !== 'conform') {
+            initialChecked[r.id] = true
+            initialNames[r.id] = r.suggestedName ?? r.currentName
+          }
+        }
+        setChecked(initialChecked)
+        setEditedNames(initialNames)
+        setAuditResults(results)
         setIsAuditing(false)
         setView('results')
       } else if (msg.type === 'AUDIT_ERROR') {
         setAuditError(msg.message)
         setIsAuditing(false)
+      } else if (msg.type === 'RENAME_RESULT') {
+        setRenameResult({ applied: msg.applied, failed: msg.failed })
       }
     }
   }, [])
@@ -73,9 +95,34 @@ export default function App() {
     setView('list')
     setAuditResults([])
     setAuditError(null)
+    setRenameResult(null)
+    setChecked({})
+    setEditedNames({})
   }
 
-  const isCapped = components.length > MAX_AUDIT
+  const handleApplySelected = () => {
+    const renames = auditResults
+      .filter((r) => r.status !== 'conform' && checked[r.id])
+      .map((r) => ({ id: r.id, newName: editedNames[r.id] ?? r.suggestedName ?? r.currentName }))
+    parent.postMessage({ pluginMessage: { type: 'apply-rename', renames } }, '*')
+  }
+
+  const handleApplyAll = () => {
+    const newChecked = { ...checked }
+    const renames: { id: string; newName: string }[] = []
+    for (const r of auditResults) {
+      if (r.status !== 'conform' && r.suggestedName) {
+        newChecked[r.id] = true
+        renames.push({ id: r.id, newName: editedNames[r.id] ?? r.suggestedName })
+      }
+    }
+    setChecked(newChecked)
+    parent.postMessage({ pluginMessage: { type: 'apply-rename', renames } }, '*')
+  }
+
+  const isCapped = totalComponents > components.length
+  const hasRenameTargets = auditResults.some((r) => r.status !== 'conform')
+  const selectedCount = Object.values(checked).filter(Boolean).length
 
   return (
     <div className="flex flex-col h-full bg-zinc-950 text-zinc-100 font-sans overflow-hidden select-none">
@@ -89,15 +136,17 @@ export default function App() {
       <main className="flex-1 flex flex-col overflow-hidden min-h-0">
         {!loaded && (
           <div className="flex-1 flex items-center justify-center">
-            <p className="text-xs text-zinc-600">Scanning page&hellip;</p>
+            <p className="text-xs text-zinc-600">Reading selection&hellip;</p>
           </div>
         )}
 
-        {loaded && components.length === 0 && (
+        {loaded && (selectionError !== null || components.length === 0) && (
           <div className="flex-1 flex flex-col items-center justify-center gap-1 px-6 text-center">
-            <p className="text-xs font-medium text-zinc-400">No components found</p>
+            <p className="text-xs font-medium text-zinc-400">
+              {selectionError ?? 'No components in selection'}
+            </p>
             <p className="text-xs text-zinc-600 leading-relaxed">
-              Open a file with components or component sets to get started.
+              Select components or component sets on the canvas and reopen the plugin.
             </p>
           </div>
         )}
@@ -130,7 +179,7 @@ export default function App() {
 
               {isCapped && (
                 <p className="text-[10px] text-amber-500 leading-tight">
-                  Auditing {MAX_AUDIT} out of {components.length} components (limit)
+                  Auditing {components.length} of {totalComponents} selected (limit)
                 </p>
               )}
 
@@ -188,16 +237,51 @@ export default function App() {
               <AuditSummary results={auditResults} />
               {isCapped && (
                 <p className="text-[10px] text-amber-500 leading-tight">
-                  Audited {MAX_AUDIT} out of {components.length} components (limit)
+                  Audited {components.length} of {totalComponents} selected (limit)
                 </p>
               )}
             </div>
 
             <ul className="flex-1 overflow-y-auto">
               {auditResults.map((result) => (
-                <AuditResultItem key={result.id} result={result} />
+                <AuditResultItem
+                  key={result.id}
+                  result={result}
+                  checked={checked[result.id]}
+                  editedName={editedNames[result.id]}
+                  onCheckChange={(val) => setChecked((prev) => ({ ...prev, [result.id]: val }))}
+                  onNameChange={(val) => setEditedNames((prev) => ({ ...prev, [result.id]: val }))}
+                />
               ))}
             </ul>
+
+            {hasRenameTargets && (
+              <div className="flex-shrink-0 px-4 py-3 border-t border-zinc-800 flex flex-col gap-2">
+                {renameResult && (
+                  <p className="text-[10px] text-zinc-400 leading-tight">
+                    {renameResult.applied} renamed
+                    {renameResult.failed.length > 0 && (
+                      <>, {renameResult.failed.length} failed: <span className="font-mono">{renameResult.failed.join(', ')}</span></>
+                    )}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleApplySelected}
+                    disabled={selectedCount === 0}
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs font-medium py-2 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Apply selected ({selectedCount})
+                  </button>
+                  <button
+                    onClick={handleApplyAll}
+                    className="flex-1 bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-semibold py-2 rounded transition-colors"
+                  >
+                    Apply all
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </main>
@@ -205,7 +289,7 @@ export default function App() {
       {loaded && components.length > 0 && view === 'list' && (
         <footer className="px-4 py-2 border-t border-zinc-800 flex-shrink-0">
           <p className="text-[10px] text-zinc-600 leading-none">
-            {components.length} {components.length === 1 ? 'component' : 'components'} on this page
+            {components.length} {components.length === 1 ? 'component' : 'components'} selected
           </p>
         </footer>
       )}
@@ -230,26 +314,53 @@ function AuditSummary({ results }: { results: AuditResult[] }) {
   )
 }
 
-function AuditResultItem({ result }: { result: AuditResult }) {
+function AuditResultItem({
+  result,
+  checked,
+  editedName,
+  onCheckChange,
+  onNameChange,
+}: {
+  result: AuditResult
+  checked?: boolean
+  editedName?: string
+  onCheckChange: (val: boolean) => void
+  onNameChange: (val: string) => void
+}) {
   const isIssue = result.status === 'non-conform' || result.status === 'ambiguous'
 
   return (
     <li className="px-4 py-2.5 border-b border-zinc-800/50 hover:bg-zinc-900/60 transition-colors">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-2.5">
+        {isIssue ? (
+          <input
+            type="checkbox"
+            checked={checked ?? false}
+            onChange={(e) => onCheckChange(e.target.checked)}
+            className="mt-0.5 flex-shrink-0 accent-zinc-400 cursor-pointer"
+          />
+        ) : (
+          <span className="w-3.5 flex-shrink-0" />
+        )}
         <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <span className="text-xs text-zinc-200 font-mono truncate leading-none">
-            {result.currentName}
-          </span>
-          {isIssue && result.suggestedName && (
-            <span className="text-xs text-zinc-500 font-mono truncate leading-none">
-              &rarr; {result.suggestedName}
+          <div className="flex items-start justify-between gap-3">
+            <span className="text-xs text-zinc-200 font-mono truncate leading-none">
+              {result.currentName}
             </span>
+            <StatusBadge status={result.status} />
+          </div>
+          {isIssue && result.suggestedName && (
+            <input
+              type="text"
+              value={editedName ?? result.suggestedName}
+              onChange={(e) => onNameChange(e.target.value)}
+              className="text-xs text-zinc-300 font-mono bg-zinc-800/60 border border-zinc-700/40 rounded px-2 py-1 focus:outline-none focus:border-zinc-500 w-full select-text"
+            />
           )}
-          <span className="text-[10px] text-zinc-600 leading-snug mt-0.5">
+          <span className="text-[10px] text-zinc-600 leading-snug">
             {result.justification}
           </span>
         </div>
-        <StatusBadge status={result.status} />
       </div>
     </li>
   )
