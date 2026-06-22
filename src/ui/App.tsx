@@ -571,9 +571,9 @@ function VariantContent({
   onNameChange: (val: string) => void
 }) {
   return (
-    <div className="flex items-start gap-2.5 px-3 py-3">
+    <div className="flex items-center gap-2 px-3 py-2">
       {/* Checkbox */}
-      <div className="pt-0.5 flex-shrink-0 w-3.5 flex justify-center">
+      <div className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center">
         {isIssue && !isRenamed && (
           <input
             type="checkbox"
@@ -585,39 +585,29 @@ function VariantContent({
       </div>
 
       {/* Icon */}
-      <div className="pt-0.5 flex-shrink-0">
-        <IconComponent size={12} />
-      </div>
+      <IconComponent size={12} />
 
-      {/* Content */}
-      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <p className="text-[10px] uppercase tracking-[0.06em] text-zinc-600 leading-none mb-0.5">
-              Current name
-            </p>
-            <p className="text-[12px] font-mono text-zinc-300 break-all leading-snug">
-              {result?.currentName ?? node.name}
-            </p>
-          </div>
-          <div className="flex-shrink-0 pt-0.5">
-            {result && (isRenamed ? <RenamedBadge /> : <StatusBadge status={result.status} />)}
-          </div>
-        </div>
+      {/* Current name — truncated */}
+      <span className="text-[11px] font-mono text-zinc-400 truncate" style={{ maxWidth: 110 }}>
+        {result?.currentName ?? node.name}
+      </span>
 
-        {isIssue && !isRenamed && result?.suggestedName && (
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.06em] text-zinc-600 leading-none mb-0.5">
-              Suggested
-            </p>
-            <input
-              type="text"
-              value={editedName ?? result.suggestedName}
-              onChange={(e) => onNameChange(e.target.value)}
-              className="text-[12px] font-mono font-medium text-zinc-200 bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2 py-1.5 focus:outline-none focus:border-violet-500/50 w-full select-text"
-            />
-          </div>
-        )}
+      {/* Arrow + suggested input */}
+      {isIssue && !isRenamed && result?.suggestedName && (
+        <>
+          <span className="text-zinc-700 text-[10px] flex-shrink-0">→</span>
+          <input
+            type="text"
+            value={editedName ?? result.suggestedName}
+            onChange={(e) => onNameChange(e.target.value)}
+            className="flex-1 min-w-0 text-[11px] font-mono text-zinc-200 bg-zinc-800/60 border border-zinc-700/40 rounded-lg px-2 py-1 focus:outline-none focus:border-violet-500/50 select-text"
+          />
+        </>
+      )}
+
+      {/* Badge pushed right */}
+      <div className="flex-shrink-0 ml-auto">
+        {result && (isRenamed ? <RenamedBadge /> : <StatusBadge status={result.status} />)}
       </div>
     </div>
   )

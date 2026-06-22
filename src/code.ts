@@ -1,6 +1,6 @@
 /// <reference types="@figma/plugin-typings" />
 
-figma.showUI(__html__, { width: 420, height: 560, title: 'Nomenclate' })
+figma.showUI(__html__, { width: 420, height: 680, title: 'Nomenclate' })
 
 const PROXY_URL = 'https://nomenclate-proxy.vercel.app/api/analyze'
 const MAX_COMPONENTS = 50
