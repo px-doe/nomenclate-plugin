@@ -336,19 +336,41 @@ export default function App() {
 
         {/* ── RESULTS VIEW ── */}
         {view === 'results' && (
-          <>
-            {/* Top bar */}
-            <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-zinc-800">
-              <button
-                onClick={handleBack}
-                className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
-              >
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                </svg>
-                Back
-              </button>
-              <AuditSummary results={auditResults} />
+          <div className="flex flex-col flex-1 min-h-0">
+            {/* Results header — 2 rows */}
+            <div className="flex-shrink-0 border-b border-zinc-800">
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <button
+                  onClick={handleBack}
+                  className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors flex items-center gap-1"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Back
+                </button>
+                <span className="text-[10px] font-medium text-violet-400 capitalize">{convention}</span>
+              </div>
+              <div className="flex items-center justify-between px-4 pb-2.5">
+                <div className="flex items-center gap-1.5">
+                  <SummaryPill
+                    count={auditResults.filter((r) => r.status === 'conform').length}
+                    label="conform"
+                    color="green"
+                  />
+                  <SummaryPill
+                    count={auditResults.filter((r) => r.status === 'non-conform').length}
+                    label="non-conform"
+                    color="red"
+                  />
+                  <SummaryPill
+                    count={auditResults.filter((r) => r.status === 'ambiguous').length}
+                    label="ambiguous"
+                    color="amber"
+                  />
+                </div>
+                <InfoTooltip />
+              </div>
             </div>
 
             {/* Selection changed banner */}
@@ -364,7 +386,7 @@ export default function App() {
             )}
 
             {/* Result group cards */}
-            <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
+            <div className="flex-1 overflow-y-auto overscroll-y-contain min-h-0 px-4 py-3 flex flex-col gap-3">
               {resultGroups.map((group) => (
                 <ResultGroupCard
                   key={group.kind === 'set' ? group.header.node.id : group.item.node.id}
@@ -416,7 +438,7 @@ export default function App() {
                 </button>
               </div>
             )}
-          </>
+          </div>
         )}
       </main>
     </div>
@@ -575,53 +597,67 @@ function normalizeStatus(s: string): AuditResult['status'] {
   return 'ambiguous'
 }
 
-function AuditSummary({ results }: { results: AuditResult[] }) {
-  const conform = results.filter((r) => r.status === 'conform').length
-  const nonConform = results.filter((r) => r.status === 'non-conform').length
-  const ambiguous = results.filter((r) => r.status === 'ambiguous').length
+function SummaryPill({
+  count,
+  label,
+  color,
+}: {
+  count: number
+  label: string
+  color: 'green' | 'red' | 'amber'
+}) {
+  if (count === 0) {
+    return (
+      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] leading-none bg-zinc-900 text-zinc-600 border border-zinc-800">
+        {count} {label}
+      </span>
+    )
+  }
+  const styles = {
+    green: { pill: 'bg-green-950/60 text-green-400 border-green-800/40', dot: 'bg-green-400' },
+    red: { pill: 'bg-red-950/60 text-red-400 border-red-800/40', dot: 'bg-red-400' },
+    amber: { pill: 'bg-amber-950/60 text-amber-400 border-amber-800/40', dot: 'bg-amber-400' },
+  }[color]
   return (
-    <div className="flex items-center gap-3">
-      <SummaryBadge
-        count={conform}
-        dotClass="bg-green-400"
-        activeTextClass="text-green-400"
-        tooltip="Conform — name fully matches the selected convention"
-      />
-      <SummaryBadge
-        count={nonConform}
-        dotClass="bg-red-400"
-        activeTextClass="text-red-400"
-        tooltip="Non-conform — name clearly violates at least one convention rule"
-      />
-      <SummaryBadge
-        count={ambiguous}
-        dotClass="bg-amber-400"
-        activeTextClass="text-amber-400"
-        tooltip="Ambiguous — convention doesn't clearly cover this case, or context is missing"
-      />
-    </div>
+    <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium leading-none border ${styles.pill}`}>
+      <span className={`w-1 h-1 rounded-full flex-shrink-0 ${styles.dot}`} />
+      {count} {label}
+    </span>
   )
 }
 
-function SummaryBadge({
-  count,
-  dotClass,
-  activeTextClass,
-  tooltip,
-}: {
-  count: number
-  dotClass: string
-  activeTextClass: string
-  tooltip: string
-}) {
-  const isEmpty = count === 0
+function InfoTooltip() {
   return (
-    <span className="flex items-center gap-1.5 cursor-help" title={tooltip}>
-      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isEmpty ? 'bg-zinc-700' : dotClass}`} />
-      <span className={`text-[10px] font-medium tabular-nums leading-none ${isEmpty ? 'text-zinc-600' : activeTextClass}`}>
-        {count}
-      </span>
-    </span>
+    <div className="relative group flex items-center">
+      <button className="w-4 h-4 rounded-full border border-zinc-700 text-zinc-600 text-[9px] font-medium flex items-center justify-center hover:border-zinc-500 hover:text-zinc-400 transition-colors leading-none">
+        ?
+      </button>
+      <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block z-50 w-56 bg-zinc-800 border border-zinc-700 rounded-xl p-3 shadow-xl pointer-events-none">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-start gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 mt-0.5 flex-shrink-0" />
+            <p className="text-[10px] leading-relaxed">
+              <span className="text-green-400 font-medium">Conform</span>
+              <span className="text-zinc-400"> — name fully matches all convention rules.</span>
+            </p>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-0.5 flex-shrink-0" />
+            <p className="text-[10px] leading-relaxed">
+              <span className="text-red-400 font-medium">Non-conform</span>
+              <span className="text-zinc-400"> — name clearly violates at least one rule.</span>
+            </p>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-0.5 flex-shrink-0" />
+            <p className="text-[10px] leading-relaxed">
+              <span className="text-amber-400 font-medium">Ambiguous</span>
+              <span className="text-zinc-400"> — the convention doesn't clearly cover this case.</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
