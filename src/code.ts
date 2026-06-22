@@ -10,6 +10,7 @@ type ComponentData = {
   name: string
   type: 'COMPONENT' | 'COMPONENT_SET'
   pluginStatus: string
+  pluginAudit: string
 }
 
 type AuditResult = {
@@ -18,6 +19,14 @@ type AuditResult = {
   status: 'conform' | 'non-conform' | 'ambiguous'
   suggestedName?: string
   justification: string
+}
+
+type SelectedNodeInfo = {
+  id: string
+  name: string
+  type: 'COMPONENT' | 'COMPONENT_SET'
+  pluginStatus: string
+  pluginAudit: string
 }
 
 const allNodes = figma.currentPage.findAll(
@@ -29,6 +38,7 @@ const allComponents: ComponentData[] = allNodes.map((node) => ({
   name: node.name,
   type: node.type as 'COMPONENT' | 'COMPONENT_SET',
   pluginStatus: node.getPluginData('nomenclate-status'),
+  pluginAudit: node.getPluginData('nomenclate-audit'),
 }))
 
 figma.ui.postMessage({
@@ -38,7 +48,34 @@ figma.ui.postMessage({
 })
 
 figma.on('selectionchange', () => {
-  figma.ui.postMessage({ type: 'SELECTION_CHANGED' })
+  const selection: SelectedNodeInfo[] = []
+
+  for (const node of figma.currentPage.selection) {
+    if (node.type === 'COMPONENT_SET') {
+      selection.push({
+        id: node.id, name: node.name, type: 'COMPONENT_SET',
+        pluginStatus: node.getPluginData('nomenclate-status'),
+        pluginAudit: node.getPluginData('nomenclate-audit'),
+      })
+      for (const child of node.children) {
+        if (child.type === 'COMPONENT') {
+          selection.push({
+            id: child.id, name: child.name, type: 'COMPONENT',
+            pluginStatus: child.getPluginData('nomenclate-status'),
+            pluginAudit: child.getPluginData('nomenclate-audit'),
+          })
+        }
+      }
+    } else if (node.type === 'COMPONENT') {
+      selection.push({
+        id: node.id, name: node.name, type: 'COMPONENT',
+        pluginStatus: node.getPluginData('nomenclate-status'),
+        pluginAudit: node.getPluginData('nomenclate-audit'),
+      })
+    }
+  }
+
+  figma.ui.postMessage({ type: 'SELECTION_CHANGED', selection })
 })
 
 figma.ui.onmessage = async (msg: {
@@ -47,6 +84,7 @@ figma.ui.onmessage = async (msg: {
   components?: ComponentData[]
   renames?: { id: string; newName: string }[]
   ids?: string[]
+  results?: Array<{ id: string; status: string }>
 }) => {
   if (msg.type === 'CLOSE') {
     figma.closePlugin()
@@ -86,6 +124,13 @@ figma.ui.onmessage = async (msg: {
     }
   }
 
+  if (msg.type === 'STORE_AUDIT') {
+    for (const { id, status } of msg.results ?? []) {
+      const node = figma.getNodeById(id)
+      if (node) node.setPluginData('nomenclate-audit', status)
+    }
+  }
+
   if (msg.type === 'apply-rename') {
     const renames = msg.renames ?? []
     let applied = 0
@@ -98,8 +143,6 @@ figma.ui.onmessage = async (msg: {
         failed.push(newName)
         continue
       }
-      // Guard: if this COMPONENT is a variant (current name has Property=Value pairs)
-      // but the suggested name lost that format, skip to avoid destroying variant properties.
       if (
         node.type === 'COMPONENT' &&
         node.parent?.type === 'COMPONENT_SET' &&

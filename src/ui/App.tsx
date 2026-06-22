@@ -5,6 +5,15 @@ interface ComponentNode {
   name: string
   type: 'COMPONENT' | 'COMPONENT_SET'
   pluginStatus: string
+  pluginAudit: string
+}
+
+interface SelectedNodeInfo {
+  id: string
+  name: string
+  type: 'COMPONENT' | 'COMPONENT_SET'
+  pluginStatus: string
+  pluginAudit: string
 }
 
 interface AuditResult {
@@ -23,7 +32,7 @@ type PluginMessage =
   | { type: 'AUDIT_RESULT'; results: AuditResult[] }
   | { type: 'AUDIT_ERROR'; message: string }
   | { type: 'RENAME_RESULT'; applied: number; failed: string[]; succeededIds: string[] }
-  | { type: 'SELECTION_CHANGED' }
+  | { type: 'SELECTION_CHANGED'; selection: SelectedNodeInfo[] }
 
 interface GroupedItem {
   node: ComponentNode
@@ -87,6 +96,7 @@ export default function App() {
   const [editedNames, setEditedNames] = useState<Record<string, string>>({})
   const [renameResult, setRenameResult] = useState<{ applied: number; failed: string[] } | null>(null)
   const [selectionChanged, setSelectionChanged] = useState(false)
+  const [selection, setSelection] = useState<SelectedNodeInfo[]>([])
   const [resultsScrollEl, setResultsScrollEl] = useState<HTMLDivElement | null>(null)
 
   const listGroups = buildGroups(components, [])
@@ -122,6 +132,18 @@ export default function App() {
         setIsAuditing(false)
         setSelectionChanged(false)
         setView('results')
+        // Persist audit results in Figma plugin data for cross-session tracking
+        parent.postMessage({
+          pluginMessage: {
+            type: 'STORE_AUDIT',
+            results: results.map((r) => ({ id: r.id, status: r.status })),
+          },
+        }, '*')
+        // Update local components state with audit results
+        setComponents((prev) => {
+          const auditMap = new Map(results.map((r) => [r.id, r.status]))
+          return prev.map((c) => auditMap.has(c.id) ? { ...c, pluginAudit: auditMap.get(c.id)! } : c)
+        })
       } else if (msg.type === 'AUDIT_ERROR') {
         setAuditError(msg.message)
         setIsAuditing(false)
@@ -134,7 +156,8 @@ export default function App() {
           )
         }
       } else if (msg.type === 'SELECTION_CHANGED') {
-        setSelectionChanged(true)
+        setSelection(msg.selection)
+        if (view === 'results') setSelectionChanged(true)
       }
     }
   }, [])
@@ -282,14 +305,26 @@ const handleAudit = () => {
               </div>
             )}
 
+            {/* Selection panel */}
+            {selection.length > 0 && (
+              <div className="flex-shrink-0 border-b border-zinc-800/60">
+                <SelectionPanel selection={selection} />
+              </div>
+            )}
+
             {/* Component group cards */}
             <div className="flex-1 min-h-0 relative">
              <div className="absolute inset-0 overflow-y-auto px-4 py-3 flex flex-col gap-2">
               {listGroups.map((group) => {
                 const groupId = group.kind === 'set' ? group.header.node.id : group.item.node.id
                 const name = group.kind === 'set' ? group.header.node.name : group.item.node.name
-                const variantCount = group.kind === 'set' ? group.children.length : 0
                 const isSet = group.kind === 'set'
+                const variants = group.kind === 'set' ? group.children : []
+                const renamedCount = group.kind === 'set'
+                  ? variants.filter((c) => c.node.pluginStatus === 'renamed').length
+                  : (group.item.node.pluginStatus === 'renamed' ? 1 : 0)
+                const total = group.kind === 'set' ? variants.length : 1
+                const allDone = renamedCount > 0 && renamedCount === total
 
                 return (
                   <label
@@ -309,11 +344,17 @@ const handleAudit = () => {
                       <p className="text-[13px] font-medium text-zinc-100 truncate leading-tight">
                         {name}
                       </p>
-                      {variantCount > 0 && (
-                        <p className="text-[11px] text-zinc-500 leading-tight mt-0.5">
-                          {variantCount} {variantCount === 1 ? 'variant' : 'variants'}
-                        </p>
-                      )}
+                      <p className="text-[11px] text-zinc-500 leading-tight mt-0.5 flex items-center gap-1.5">
+                        {isSet && <span>{total} variants</span>}
+                        {renamedCount > 0 && (
+                          <>
+                            {isSet && <span className="text-zinc-700">·</span>}
+                            <span className={allDone ? 'text-green-500' : 'text-zinc-400'}>
+                              {allDone ? `All ${total} renamed ✓` : `${renamedCount}/${total} renamed`}
+                            </span>
+                          </>
+                        )}
+                      </p>
                     </div>
                   </label>
                 )
@@ -464,6 +505,73 @@ const handleAudit = () => {
       </main>
     </div>
   )
+}
+
+function SelectionPanel({ selection }: { selection: SelectedNodeInfo[] }) {
+  const sets = selection.filter((s) => s.type === 'COMPONENT_SET')
+  const variants = selection.filter((s) => s.type === 'COMPONENT')
+
+  // 1 set selected → show variant progress
+  if (sets.length === 1 && variants.length > 0) {
+    const set = sets[0]
+    const renamed = variants.filter((v) => v.pluginStatus === 'renamed').length
+    const allDone = renamed === variants.length
+    return (
+      <div className="px-4 py-2.5 flex flex-col gap-1">
+        <div className="flex items-center gap-1.5">
+          <IconComponentSet size={12} />
+          <span className="text-[11px] font-medium text-zinc-200 truncate">{set.name}</span>
+        </div>
+        <div className="flex items-center gap-2 text-[10px]">
+          <span className="text-zinc-500">{variants.length} variants</span>
+          {renamed > 0 && (
+            <span className={allDone ? 'text-green-400' : 'text-zinc-400'}>
+              {allDone ? `All ${renamed} renamed ✓` : `${renamed} renamed`}
+            </span>
+          )}
+          {!allDone && (
+            <span className="text-zinc-600">{variants.length - renamed} remaining</span>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // 1 variant selected → show its status
+  if (sets.length === 0 && variants.length === 1) {
+    const v = variants[0]
+    return (
+      <div className="px-4 py-2.5 flex items-center gap-2">
+        <IconComponent size={11} />
+        <span className="text-[11px] font-mono text-zinc-400 truncate flex-1 min-w-0">{v.name}</span>
+        <NodeStatusBadge pluginStatus={v.pluginStatus} pluginAudit={v.pluginAudit} />
+      </div>
+    )
+  }
+
+  // Multiple / mixed selection
+  const totalRenamed = selection.filter((s) => s.pluginStatus === 'renamed').length
+  return (
+    <div className="px-4 py-2.5">
+      <span className="text-[10px] text-zinc-500">
+        {selection.length} selected · {totalRenamed} renamed
+      </span>
+    </div>
+  )
+}
+
+function NodeStatusBadge({ pluginStatus, pluginAudit }: { pluginStatus: string; pluginAudit: string }) {
+  if (pluginStatus === 'renamed') {
+    return (
+      <span className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-green-950/60 text-green-400 border border-green-800/40 leading-none">
+        Renamed ✓
+      </span>
+    )
+  }
+  if (pluginAudit === 'conform' || pluginAudit === 'non-conform' || pluginAudit === 'ambiguous') {
+    return <StatusBadge status={pluginAudit as 'conform' | 'non-conform' | 'ambiguous'} />
+  }
+  return <span className="flex-shrink-0 text-[10px] text-zinc-600">Not audited</span>
 }
 
 function CustomScrollbar({ scrollEl }: { scrollEl: HTMLDivElement | null }) {
