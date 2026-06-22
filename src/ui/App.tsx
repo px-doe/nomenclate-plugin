@@ -397,11 +397,14 @@ const handleAudit = () => {
             )}
 
             {/* Result group cards */}
-            <div className="flex-1 min-h-0 relative" style={{ minHeight: 0 }}>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
               <div
                 ref={setResultsScrollEl}
                 tabIndex={-1}
-                style={{ position: 'absolute', inset: 0, overflowY: 'auto' }}
+                style={{
+                  height: `calc(100vh - ${(hasRenameTargets ? 290 : 150) + (selectionChanged ? 50 : 0)}px)`,
+                  overflowY: 'auto',
+                }}
                 className="outline-none px-4 py-3 pr-5 flex flex-col gap-3"
               >
                 {resultGroups.map((group) => (
