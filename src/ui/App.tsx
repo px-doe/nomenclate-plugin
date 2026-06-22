@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 
 interface ComponentNode {
   id: string
@@ -25,6 +25,15 @@ type PluginMessage =
   | { type: 'AUDIT_ERROR'; message: string }
   | { type: 'RENAME_RESULT'; applied: number; failed: string[]; succeededIds: string[] }
 
+interface GroupedItem {
+  node: ComponentNode
+  result?: AuditResult
+}
+
+type Group =
+  | { kind: 'set'; header: GroupedItem; children: GroupedItem[] }
+  | { kind: 'standalone'; item: GroupedItem }
+
 const CONVENTION_OPTIONS: { value: Convention; label: string; available: boolean }[] = [
   { value: 'tailwind', label: 'Tailwind CSS', available: true },
   { value: 'material3', label: 'Material Design 3', available: false },
@@ -32,6 +41,28 @@ const CONVENTION_OPTIONS: { value: Convention; label: string; available: boolean
   { value: 'polaris', label: 'Polaris', available: false },
   { value: 'atomic', label: 'Atomic Design', available: false },
 ]
+
+function buildGroups(components: ComponentNode[], results: AuditResult[]): Group[] {
+  const resultMap = new Map(results.map((r) => [r.id, r]))
+  const groups: Group[] = []
+  let i = 0
+  while (i < components.length) {
+    const node = components[i]
+    if (node.type === 'COMPONENT_SET') {
+      const children: GroupedItem[] = []
+      i++
+      while (i < components.length && components[i].type === 'COMPONENT') {
+        children.push({ node: components[i], result: resultMap.get(components[i].id) })
+        i++
+      }
+      groups.push({ kind: 'set', header: { node, result: resultMap.get(node.id) }, children })
+    } else {
+      groups.push({ kind: 'standalone', item: { node, result: resultMap.get(node.id) } })
+      i++
+    }
+  }
+  return groups
+}
 
 export default function App() {
   const [components, setComponents] = useState<ComponentNode[]>([])
@@ -92,10 +123,7 @@ export default function App() {
   const handleAudit = () => {
     setIsAuditing(true)
     setAuditError(null)
-    parent.postMessage(
-      { pluginMessage: { type: 'AUDIT', convention, components } },
-      '*'
-    )
+    parent.postMessage({ pluginMessage: { type: 'AUDIT', convention, components } }, '*')
   }
 
   const handleBack = () => {
@@ -107,19 +135,19 @@ export default function App() {
     setEditedNames({})
   }
 
-  const handleApplySelected = () => {
-    const renames = auditResults
-      .filter((r) => r.status !== 'conform' && checked[r.id])
-      .map((r) => ({ id: r.id, newName: editedNames[r.id] ?? r.suggestedName ?? r.currentName }))
-    parent.postMessage({ pluginMessage: { type: 'apply-rename', renames } }, '*')
-  }
-
   const handleSelectRemaining = () => {
     const renamedIds = new Set(components.filter((c) => c.pluginStatus === 'renamed').map((c) => c.id))
     const ids = auditResults
       .filter((r) => r.status !== 'conform' && !renamedIds.has(r.id))
       .map((r) => r.id)
     parent.postMessage({ pluginMessage: { type: 'select-remaining', ids } }, '*')
+  }
+
+  const handleApplySelected = () => {
+    const renames = auditResults
+      .filter((r) => r.status !== 'conform' && checked[r.id])
+      .map((r) => ({ id: r.id, newName: editedNames[r.id] ?? r.suggestedName ?? r.currentName }))
+    parent.postMessage({ pluginMessage: { type: 'apply-rename', renames } }, '*')
   }
 
   const handleApplyAll = () => {
@@ -138,6 +166,7 @@ export default function App() {
   const isCapped = totalComponents > components.length
   const hasRenameTargets = auditResults.some((r) => r.status !== 'conform')
   const selectedCount = Object.values(checked).filter(Boolean).length
+  const groups = buildGroups(components, auditResults)
 
   return (
     <div className="flex flex-col h-full bg-zinc-950 text-zinc-100 font-sans overflow-hidden select-none">
@@ -261,17 +290,53 @@ export default function App() {
             </div>
 
             <ul className="flex-1 overflow-y-auto">
-              {auditResults.map((result) => (
-                <AuditResultItem
-                  key={result.id}
-                  result={result}
-                  pluginStatus={components.find((c) => c.id === result.id)?.pluginStatus ?? ''}
-                  checked={checked[result.id]}
-                  editedName={editedNames[result.id]}
-                  onCheckChange={(val) => setChecked((prev) => ({ ...prev, [result.id]: val }))}
-                  onNameChange={(val) => setEditedNames((prev) => ({ ...prev, [result.id]: val }))}
-                />
-              ))}
+              {groups.map((group, groupIdx) => {
+                const isLastGroup = groupIdx === groups.length - 1
+                if (group.kind === 'set') {
+                  return (
+                    <Fragment key={group.header.node.id}>
+                      <SetHeader
+                        item={group.header}
+                        checked={checked[group.header.node.id]}
+                        onCheckChange={(val) =>
+                          setChecked((prev) => ({ ...prev, [group.header.node.id]: val }))
+                        }
+                      />
+                      {group.children.map((child, idx) => (
+                        <VariantRow
+                          key={child.node.id}
+                          item={child}
+                          checked={checked[child.node.id]}
+                          editedName={editedNames[child.node.id]}
+                          onCheckChange={(val) =>
+                            setChecked((prev) => ({ ...prev, [child.node.id]: val }))
+                          }
+                          onNameChange={(val) =>
+                            setEditedNames((prev) => ({ ...prev, [child.node.id]: val }))
+                          }
+                          showSeparator={idx < group.children.length - 1}
+                        />
+                      ))}
+                    </Fragment>
+                  )
+                } else {
+                  return (
+                    <VariantRow
+                      key={group.item.node.id}
+                      item={group.item}
+                      checked={checked[group.item.node.id]}
+                      editedName={editedNames[group.item.node.id]}
+                      onCheckChange={(val) =>
+                        setChecked((prev) => ({ ...prev, [group.item.node.id]: val }))
+                      }
+                      onNameChange={(val) =>
+                        setEditedNames((prev) => ({ ...prev, [group.item.node.id]: val }))
+                      }
+                      showSeparator={!isLastGroup}
+                    />
+                  )
+                }
+              })}
             </ul>
 
             {hasRenameTargets && (
@@ -280,7 +345,9 @@ export default function App() {
                   <p className="text-[10px] text-zinc-400 leading-tight">
                     {renameResult.applied} renamed
                     {renameResult.failed.length > 0 && (
-                      <>, {renameResult.failed.length} failed: <span className="font-mono">{renameResult.failed.join(', ')}</span></>
+                      <>, {renameResult.failed.length} failed:{' '}
+                        <span className="font-mono">{renameResult.failed.join(', ')}</span>
+                      </>
                     )}
                   </p>
                 )}
@@ -339,64 +406,123 @@ function AuditSummary({ results }: { results: AuditResult[] }) {
   )
 }
 
-function AuditResultItem({
-  result,
-  pluginStatus,
+function SetHeader({
+  item,
   checked,
-  editedName,
   onCheckChange,
-  onNameChange,
 }: {
-  result: AuditResult
-  pluginStatus: string
+  item: GroupedItem
   checked?: boolean
-  editedName?: string
   onCheckChange: (val: boolean) => void
-  onNameChange: (val: string) => void
 }) {
-  const isIssue = result.status === 'non-conform' || result.status === 'ambiguous'
-  const isRenamed = pluginStatus === 'renamed'
+  const { node, result } = item
+  const isRenamed = node.pluginStatus === 'renamed'
+  const isIssue = result?.status === 'non-conform' || result?.status === 'ambiguous'
 
   return (
-    <li className={`px-4 py-2.5 border-b border-zinc-800/50 hover:bg-zinc-900/60 transition-colors${isRenamed ? ' opacity-40' : ''}`}>
-      <div className="flex items-start gap-2.5">
+    <li className={`bg-zinc-900 border-b border-zinc-800/50${isRenamed ? ' opacity-50' : ''}`}>
+      <div className="flex items-center gap-2.5 px-4 py-2.5">
         {isIssue && !isRenamed ? (
           <input
             type="checkbox"
             checked={checked ?? false}
             onChange={(e) => onCheckChange(e.target.checked)}
-            className="mt-0.5 flex-shrink-0 accent-zinc-400 cursor-pointer"
+            className="flex-shrink-0 accent-zinc-400 cursor-pointer"
           />
         ) : (
           <span className="w-3.5 flex-shrink-0" />
         )}
-        <div className="flex-1 min-w-0 flex flex-col gap-1">
-          <div className="flex items-start justify-between gap-3">
-            <span className="text-xs text-zinc-200 font-mono truncate leading-none">
-              {result.currentName}
-            </span>
-            {isRenamed ? <RenamedBadge /> : <StatusBadge status={result.status} />}
-          </div>
-          {isIssue && !isRenamed && result.suggestedName && (
+        <svg width="14" height="14" viewBox="0 0 14 14" className="flex-shrink-0">
+          <rect x="1" y="1" width="12" height="12" rx="2.5" fill="#A259FF" />
+        </svg>
+        <span className="flex-1 text-sm font-mono font-medium text-zinc-200 truncate leading-none">
+          {node.name}
+        </span>
+        {result && (isRenamed ? <RenamedBadge /> : <StatusBadge status={result.status} />)}
+      </div>
+    </li>
+  )
+}
+
+function VariantRow({
+  item,
+  checked,
+  editedName,
+  onCheckChange,
+  onNameChange,
+  showSeparator = false,
+}: {
+  item: GroupedItem
+  checked?: boolean
+  editedName?: string
+  onCheckChange: (val: boolean) => void
+  onNameChange: (val: string) => void
+  showSeparator?: boolean
+}) {
+  const { node, result } = item
+  const isRenamed = node.pluginStatus === 'renamed'
+  const isIssue = result?.status === 'non-conform' || result?.status === 'ambiguous'
+
+  return (
+    <li className={isRenamed ? 'opacity-50' : undefined}>
+      <div className="grid grid-cols-[18px_16px_1fr_76px] gap-x-2 items-start px-4 py-2.5">
+        {/* Col 1: checkbox */}
+        <div className="pt-[3px]">
+          {isIssue && !isRenamed && (
             <input
-              type="text"
-              value={editedName ?? result.suggestedName}
-              onChange={(e) => onNameChange(e.target.value)}
-              className="text-xs text-zinc-300 font-mono bg-zinc-800/60 border border-zinc-700/40 rounded px-2 py-1 focus:outline-none focus:border-zinc-500 w-full select-text"
+              type="checkbox"
+              checked={checked ?? false}
+              onChange={(e) => onCheckChange(e.target.checked)}
+              className="accent-zinc-400 cursor-pointer"
             />
           )}
-          <span className="text-[10px] text-zinc-600 leading-snug">
-            {result.justification}
-          </span>
+        </div>
+
+        {/* Col 2: outline diamond */}
+        <div className="pt-[3px]">
+          <svg width="12" height="12" viewBox="0 0 14 14">
+            <rect x="1" y="1" width="12" height="12" rx="2.5" fill="none" stroke="#A259FF" strokeWidth="1.5" />
+          </svg>
+        </div>
+
+        {/* Col 3: current name + suggested input */}
+        <div className="flex flex-col gap-1.5 min-w-0">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.02em] text-zinc-500 leading-none mb-0.5">
+              Current name
+            </p>
+            <p className="text-xs font-mono text-zinc-400 break-all leading-snug">
+              {result?.currentName ?? node.name}
+            </p>
+          </div>
+          {isIssue && !isRenamed && result?.suggestedName && (
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.02em] text-zinc-500 leading-none mb-0.5">
+                Suggested
+              </p>
+              <input
+                type="text"
+                value={editedName ?? result.suggestedName}
+                onChange={(e) => onNameChange(e.target.value)}
+                className="text-[13px] font-mono font-medium text-zinc-300 bg-zinc-800/60 border border-zinc-700/40 rounded px-2 py-1 focus:outline-none focus:border-zinc-500 w-full select-text"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Col 4: badge */}
+        <div className="flex justify-end pt-[3px]">
+          {result && (isRenamed ? <RenamedBadge /> : <StatusBadge status={result.status} />)}
         </div>
       </div>
+      {showSeparator && <div className="mx-4 h-px bg-zinc-800/60" />}
     </li>
   )
 }
 
 function RenamedBadge() {
   return (
-    <span className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded tracking-wide uppercase bg-zinc-800/60 text-zinc-500 border border-zinc-700/40 leading-none">
+    <span className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded tracking-wide uppercase bg-zinc-800/60 text-zinc-500 border border-zinc-700/40 leading-none whitespace-nowrap">
       Renamed
     </span>
   )
@@ -420,20 +546,20 @@ function TypeBadge({ type }: { type: 'COMPONENT' | 'COMPONENT_SET' }) {
 function StatusBadge({ status }: { status: AuditResult['status'] }) {
   if (status === 'conform') {
     return (
-      <span className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded tracking-wide uppercase bg-green-950/70 text-green-400 border border-green-800/40 leading-none">
+      <span className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded tracking-wide uppercase bg-green-950/70 text-green-400 border border-green-800/40 leading-none whitespace-nowrap">
         Conform
       </span>
     )
   }
   if (status === 'non-conform') {
     return (
-      <span className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded tracking-wide uppercase bg-red-950/70 text-red-400 border border-red-800/40 leading-none">
+      <span className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded tracking-wide uppercase bg-red-950/70 text-red-400 border border-red-800/40 leading-none whitespace-nowrap">
         Non-conform
       </span>
     )
   }
   return (
-    <span className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded tracking-wide uppercase bg-amber-950/70 text-amber-400 border border-amber-800/40 leading-none">
+    <span className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded tracking-wide uppercase bg-amber-950/70 text-amber-400 border border-amber-800/40 leading-none whitespace-nowrap">
       Ambiguous
     </span>
   )
