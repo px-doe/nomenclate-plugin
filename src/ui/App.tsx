@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 
 interface ComponentNode {
   id: string
@@ -139,11 +139,13 @@ export default function App() {
     }
   }, [])
 
-  useEffect(() => {
-    if (view === 'results') {
-      setTimeout(() => resultsScrollEl?.focus(), 50)
-    }
-  }, [view, resultsScrollEl])
+  useLayoutEffect(() => {
+    if (!resultsScrollEl) return
+    const footer = document.querySelector('[data-rf]') as HTMLElement | null
+    const rect = resultsScrollEl.getBoundingClientRect()
+    const footerH = footer?.getBoundingClientRect().height ?? 0
+    resultsScrollEl.style.height = `${Math.max(80, window.innerHeight - rect.top - footerH)}px`
+  }, [resultsScrollEl, hasRenameTargets, selectionChanged])
 
 const handleAudit = () => {
     const toAudit: ComponentNode[] = []
@@ -396,16 +398,13 @@ const handleAudit = () => {
               </div>
             )}
 
-            {/* Result group cards */}
+            {/* Result list */}
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <div
                 ref={setResultsScrollEl}
                 tabIndex={-1}
-                style={{
-                  height: `calc(100vh - ${(hasRenameTargets ? 290 : 150) + (selectionChanged ? 50 : 0)}px)`,
-                  overflowY: 'auto',
-                }}
-                className="outline-none px-4 py-3 pr-5 flex flex-col gap-3"
+                style={{ overflowY: 'auto' }}
+                className="outline-none px-4 py-2 pr-5 flex flex-col"
               >
                 {resultGroups.map((group) => (
                   <ResultGroupCard
@@ -423,7 +422,7 @@ const handleAudit = () => {
 
             {/* Apply footer */}
             {hasRenameTargets && (
-              <div className="flex-shrink-0 px-4 pb-4 pt-2 border-t border-zinc-800 flex flex-col gap-2">
+              <div data-rf className="flex-shrink-0 px-4 pb-4 pt-2 border-t border-zinc-800 flex flex-col gap-2">
                 <p className="text-[10px] text-zinc-600 leading-snug">
                   Check the names you want to rename, edit suggestions if needed, then apply.
                 </p>
@@ -552,16 +551,11 @@ function ResultGroupCard({
     const { node, result } = group.item
     const isRenamed = node.pluginStatus === 'renamed'
     const isIssue = result?.status === 'non-conform' || result?.status === 'ambiguous'
-
     return (
-      <div className={`border border-zinc-800 rounded-xl overflow-hidden${isRenamed ? ' opacity-50' : ''}`}>
+      <div className={`border-b border-zinc-800/50${isRenamed ? ' opacity-50' : ''}`}>
         <VariantContent
-          node={node}
-          result={result}
-          isRenamed={isRenamed}
-          isIssue={isIssue}
-          checked={checked[node.id]}
-          editedName={editedNames[node.id]}
+          node={node} result={result} isRenamed={isRenamed} isIssue={isIssue}
+          checked={checked[node.id]} editedName={editedNames[node.id]}
           onCheckChange={(val) => onCheckChange(node.id, val)}
           onNameChange={(val) => onNameChange(node.id, val)}
         />
@@ -574,30 +568,25 @@ function ResultGroupCard({
   const isSetRenamed = setNode.pluginStatus === 'renamed'
 
   return (
-    <div className={`border border-zinc-800 rounded-xl overflow-hidden${isSetRenamed ? ' opacity-50' : ''}`}>
-      {/* SET header */}
-      <div className="flex items-center gap-2.5 px-3 py-2.5 bg-zinc-900">
+    <div className={isSetRenamed ? 'opacity-50' : ''}>
+      {/* SET header row */}
+      <div className="flex items-center gap-2.5 px-3 py-2.5 bg-zinc-900/60 border-b border-zinc-800/50">
         <IconComponentSet size={16} />
         <span className="flex-1 text-[13px] font-semibold text-zinc-100 truncate leading-none">
           {setNode.name}
         </span>
         {setResult && (isSetRenamed ? <RenamedBadge /> : <StatusBadge status={setResult.status} />)}
       </div>
-
-      {/* Variants */}
+      {/* Variant rows */}
       {children.map((child) => {
         const { node, result } = child
         const isRenamed = node.pluginStatus === 'renamed'
         const isIssue = result?.status === 'non-conform' || result?.status === 'ambiguous'
         return (
-          <div key={node.id} className={`border-t border-zinc-800/60${isRenamed ? ' opacity-50' : ''}`}>
+          <div key={node.id} className={`border-b border-zinc-800/40 pl-3${isRenamed ? ' opacity-50' : ''}`}>
             <VariantContent
-              node={node}
-              result={result}
-              isRenamed={isRenamed}
-              isIssue={isIssue}
-              checked={checked[node.id]}
-              editedName={editedNames[node.id]}
+              node={node} result={result} isRenamed={isRenamed} isIssue={isIssue}
+              checked={checked[node.id]} editedName={editedNames[node.id]}
               onCheckChange={(val) => onCheckChange(node.id, val)}
               onNameChange={(val) => onNameChange(node.id, val)}
             />
