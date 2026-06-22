@@ -140,9 +140,25 @@ export default function App() {
 
   useEffect(() => {
     if (view === 'results') {
-      // Give focus to the scroll container so Figma Desktop routes wheel events to it
       setTimeout(() => resultsScrollRef.current?.focus(), 50)
     }
+  }, [view])
+
+  // Manual wheel handler — bypasses Figma Desktop's gesture capture
+  useEffect(() => {
+    if (view !== 'results') return
+    const el = resultsScrollRef.current
+    if (!el) return
+
+    const onWheel = (e: WheelEvent) => {
+      const target = e.target as Node
+      if (!el.contains(target) && target !== el) return
+      e.preventDefault()
+      el.scrollTop += e.deltaY
+    }
+
+    window.addEventListener('wheel', onWheel, { passive: false })
+    return () => window.removeEventListener('wheel', onWheel)
   }, [view])
 
   const handleAudit = () => {
@@ -403,7 +419,6 @@ export default function App() {
               tabIndex={-1}
               style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto' }}
               className="touch-pan-y outline-none px-4 py-3 flex flex-col gap-3"
-              onWheel={(e) => e.stopPropagation()}
             >
               {resultGroups.map((group) => (
                 <ResultGroupCard
