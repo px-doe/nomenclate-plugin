@@ -363,11 +363,13 @@ export default function App() {
                     label="non-conform"
                     color="red"
                   />
-                  <SummaryPill
-                    count={auditResults.filter((r) => r.status === 'ambiguous').length}
-                    label="ambiguous"
-                    color="amber"
-                  />
+                  {auditResults.some((r) => r.status === 'ambiguous') && (
+                    <SummaryPill
+                      count={auditResults.filter((r) => r.status === 'ambiguous').length}
+                      label="ambiguous"
+                      color="amber"
+                    />
+                  )}
                 </div>
                 <InfoTooltip />
               </div>
@@ -386,7 +388,10 @@ export default function App() {
             )}
 
             {/* Result group cards */}
-            <div className="flex-1 overflow-y-auto overscroll-y-contain min-h-0 px-4 py-3 flex flex-col gap-3">
+            <div
+              className="flex-1 overflow-y-auto overscroll-y-contain min-h-0 px-4 py-3 flex flex-col gap-3"
+              onWheel={(e) => e.stopPropagation()}
+            >
               {resultGroups.map((group) => (
                 <ResultGroupCard
                   key={group.kind === 'set' ? group.header.node.id : group.item.node.id}
@@ -632,7 +637,7 @@ function InfoTooltip() {
       <button className="w-4 h-4 rounded-full border border-zinc-700 text-zinc-600 text-[9px] font-medium flex items-center justify-center hover:border-zinc-500 hover:text-zinc-400 transition-colors leading-none">
         ?
       </button>
-      <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block z-50 w-56 bg-zinc-800 border border-zinc-700 rounded-xl p-3 shadow-xl pointer-events-none">
+      <div className="absolute right-0 top-full mt-1 hidden group-hover:block z-50 w-56 bg-zinc-800 border border-zinc-700 rounded-xl p-3 shadow-xl pointer-events-none">
         <div className="flex flex-col gap-2">
           <div className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 mt-0.5 flex-shrink-0" />
