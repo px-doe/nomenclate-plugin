@@ -4,6 +4,7 @@ interface ComponentNode {
   id: string
   name: string
   type: 'COMPONENT' | 'COMPONENT_SET'
+  pluginStatus: string
 }
 
 interface AuditResult {
@@ -22,7 +23,7 @@ type PluginMessage =
   | { type: 'SELECTION_ERROR'; message: string }
   | { type: 'AUDIT_RESULT'; results: AuditResult[] }
   | { type: 'AUDIT_ERROR'; message: string }
-  | { type: 'RENAME_RESULT'; applied: number; failed: string[] }
+  | { type: 'RENAME_RESULT'; applied: number; failed: string[]; succeededIds: string[] }
 
 const CONVENTION_OPTIONS: { value: Convention; label: string; available: boolean }[] = [
   { value: 'tailwind', label: 'Tailwind CSS', available: true },
@@ -78,6 +79,12 @@ export default function App() {
         setIsAuditing(false)
       } else if (msg.type === 'RENAME_RESULT') {
         setRenameResult({ applied: msg.applied, failed: msg.failed })
+        if (msg.succeededIds.length > 0) {
+          const succeeded = new Set(msg.succeededIds)
+          setComponents((prev) =>
+            prev.map((c) => succeeded.has(c.id) ? { ...c, pluginStatus: 'renamed' } : c)
+          )
+        }
       }
     }
   }, [])
@@ -105,6 +112,14 @@ export default function App() {
       .filter((r) => r.status !== 'conform' && checked[r.id])
       .map((r) => ({ id: r.id, newName: editedNames[r.id] ?? r.suggestedName ?? r.currentName }))
     parent.postMessage({ pluginMessage: { type: 'apply-rename', renames } }, '*')
+  }
+
+  const handleSelectRemaining = () => {
+    const renamedIds = new Set(components.filter((c) => c.pluginStatus === 'renamed').map((c) => c.id))
+    const ids = auditResults
+      .filter((r) => r.status !== 'conform' && !renamedIds.has(r.id))
+      .map((r) => r.id)
+    parent.postMessage({ pluginMessage: { type: 'select-remaining', ids } }, '*')
   }
 
   const handleApplyAll = () => {
@@ -207,17 +222,20 @@ export default function App() {
             </div>
 
             <ul className="flex-1 overflow-y-auto">
-              {components.map((component) => (
-                <li
-                  key={component.id}
-                  className="flex items-center justify-between px-4 py-2.5 gap-3 border-b border-zinc-800/50 hover:bg-zinc-900/60 transition-colors"
-                >
-                  <span className="text-xs text-zinc-200 font-mono truncate leading-none">
-                    {component.name}
-                  </span>
-                  <TypeBadge type={component.type} />
-                </li>
-              ))}
+              {components.map((component) => {
+                const isRenamed = component.pluginStatus === 'renamed'
+                return (
+                  <li
+                    key={component.id}
+                    className={`flex items-center justify-between px-4 py-2.5 gap-3 border-b border-zinc-800/50 hover:bg-zinc-900/60 transition-colors${isRenamed ? ' opacity-40' : ''}`}
+                  >
+                    <span className="text-xs text-zinc-200 font-mono truncate leading-none">
+                      {component.name}
+                    </span>
+                    {isRenamed ? <RenamedBadge /> : <TypeBadge type={component.type} />}
+                  </li>
+                )
+              })}
             </ul>
           </>
         )}
@@ -247,6 +265,7 @@ export default function App() {
                 <AuditResultItem
                   key={result.id}
                   result={result}
+                  pluginStatus={components.find((c) => c.id === result.id)?.pluginStatus ?? ''}
                   checked={checked[result.id]}
                   editedName={editedNames[result.id]}
                   onCheckChange={(val) => setChecked((prev) => ({ ...prev, [result.id]: val }))}
@@ -280,6 +299,12 @@ export default function App() {
                     Apply all
                   </button>
                 </div>
+                <button
+                  onClick={handleSelectRemaining}
+                  className="w-full text-[10px] text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-700 rounded py-1.5 transition-colors"
+                >
+                  Select remaining in Figma
+                </button>
               </div>
             )}
           </>
@@ -316,23 +341,26 @@ function AuditSummary({ results }: { results: AuditResult[] }) {
 
 function AuditResultItem({
   result,
+  pluginStatus,
   checked,
   editedName,
   onCheckChange,
   onNameChange,
 }: {
   result: AuditResult
+  pluginStatus: string
   checked?: boolean
   editedName?: string
   onCheckChange: (val: boolean) => void
   onNameChange: (val: string) => void
 }) {
   const isIssue = result.status === 'non-conform' || result.status === 'ambiguous'
+  const isRenamed = pluginStatus === 'renamed'
 
   return (
-    <li className="px-4 py-2.5 border-b border-zinc-800/50 hover:bg-zinc-900/60 transition-colors">
+    <li className={`px-4 py-2.5 border-b border-zinc-800/50 hover:bg-zinc-900/60 transition-colors${isRenamed ? ' opacity-40' : ''}`}>
       <div className="flex items-start gap-2.5">
-        {isIssue ? (
+        {isIssue && !isRenamed ? (
           <input
             type="checkbox"
             checked={checked ?? false}
@@ -347,9 +375,9 @@ function AuditResultItem({
             <span className="text-xs text-zinc-200 font-mono truncate leading-none">
               {result.currentName}
             </span>
-            <StatusBadge status={result.status} />
+            {isRenamed ? <RenamedBadge /> : <StatusBadge status={result.status} />}
           </div>
-          {isIssue && result.suggestedName && (
+          {isIssue && !isRenamed && result.suggestedName && (
             <input
               type="text"
               value={editedName ?? result.suggestedName}
@@ -363,6 +391,14 @@ function AuditResultItem({
         </div>
       </div>
     </li>
+  )
+}
+
+function RenamedBadge() {
+  return (
+    <span className="flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded tracking-wide uppercase bg-zinc-800/60 text-zinc-500 border border-zinc-700/40 leading-none">
+      Renamed
+    </span>
   )
 }
 
