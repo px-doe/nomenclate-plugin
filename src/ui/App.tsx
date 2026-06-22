@@ -87,7 +87,7 @@ export default function App() {
   const [editedNames, setEditedNames] = useState<Record<string, string>>({})
   const [renameResult, setRenameResult] = useState<{ applied: number; failed: string[] } | null>(null)
   const [selectionChanged, setSelectionChanged] = useState(false)
-  const resultsScrollRef = useRef<HTMLDivElement>(null)
+  const [resultsScrollEl, setResultsScrollEl] = useState<HTMLDivElement | null>(null)
 
   const listGroups = buildGroups(components, [])
 
@@ -140,26 +140,9 @@ export default function App() {
 
   useEffect(() => {
     if (view === 'results') {
-      setTimeout(() => resultsScrollRef.current?.focus(), 50)
+      setTimeout(() => resultsScrollEl?.focus(), 50)
     }
-  }, [view])
-
-  // Manual wheel handler — bypasses Figma Desktop's gesture capture
-  useEffect(() => {
-    if (view !== 'results') return
-    const el = resultsScrollRef.current
-    if (!el) return
-
-    const onWheel = (e: WheelEvent) => {
-      const target = e.target as Node
-      if (!el.contains(target) && target !== el) return
-      e.preventDefault()
-      el.scrollTop += e.deltaY
-    }
-
-    window.addEventListener('wheel', onWheel, { passive: false })
-    return () => window.removeEventListener('wheel', onWheel)
-  }, [view])
+  }, [view, resultsScrollEl])
 
   const handleAudit = () => {
     const toAudit: ComponentNode[] = []
@@ -414,22 +397,25 @@ export default function App() {
             )}
 
             {/* Result group cards */}
-            <div
-              ref={resultsScrollRef}
-              tabIndex={-1}
-              style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto' }}
-              className="touch-pan-y outline-none px-4 py-3 flex flex-col gap-3"
-            >
-              {resultGroups.map((group) => (
-                <ResultGroupCard
-                  key={group.kind === 'set' ? group.header.node.id : group.item.node.id}
-                  group={group}
-                  checked={checked}
-                  editedNames={editedNames}
-                  onCheckChange={(id, val) => setChecked((prev) => ({ ...prev, [id]: val }))}
-                  onNameChange={(id, val) => setEditedNames((prev) => ({ ...prev, [id]: val }))}
-                />
-              ))}
+            <div className="flex-1 min-h-0 relative" style={{ minHeight: 0 }}>
+              <div
+                ref={setResultsScrollEl}
+                tabIndex={-1}
+                style={{ position: 'absolute', inset: 0, overflowY: 'auto' }}
+                className="outline-none px-4 py-3 pr-5 flex flex-col gap-3"
+              >
+                {resultGroups.map((group) => (
+                  <ResultGroupCard
+                    key={group.kind === 'set' ? group.header.node.id : group.item.node.id}
+                    group={group}
+                    checked={checked}
+                    editedNames={editedNames}
+                    onCheckChange={(id, val) => setChecked((prev) => ({ ...prev, [id]: val }))}
+                    onNameChange={(id, val) => setEditedNames((prev) => ({ ...prev, [id]: val }))}
+                  />
+                ))}
+              </div>
+              <CustomScrollbar scrollEl={resultsScrollEl} />
             </div>
 
             {/* Apply footer */}
@@ -474,6 +460,61 @@ export default function App() {
           </>
         )}
       </main>
+    </div>
+  )
+}
+
+function CustomScrollbar({ scrollEl }: { scrollEl: HTMLDivElement | null }) {
+  const [thumbStyle, setThumbStyle] = useState<{ height: string; top: string }>({ height: '100%', top: '0px' })
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (!scrollEl) return
+    const update = () => {
+      const { scrollTop, scrollHeight, clientHeight } = scrollEl
+      if (scrollHeight <= clientHeight) { setVisible(false); return }
+      setVisible(true)
+      const thumbH = Math.max(32, (clientHeight / scrollHeight) * clientHeight)
+      const maxThumbTop = clientHeight - thumbH
+      const thumbTop = (scrollTop / (scrollHeight - clientHeight)) * maxThumbTop
+      setThumbStyle({ height: `${thumbH}px`, top: `${thumbTop}px` })
+    }
+    scrollEl.addEventListener('scroll', update)
+    const ro = new ResizeObserver(update)
+    ro.observe(scrollEl)
+    update()
+    return () => { scrollEl.removeEventListener('scroll', update); ro.disconnect() }
+  }, [scrollEl])
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!scrollEl) return
+    e.preventDefault()
+    const startY = e.clientY
+    const startScrollTop = scrollEl.scrollTop
+    const { scrollHeight, clientHeight } = scrollEl
+    const thumbH = Math.max(32, (clientHeight / scrollHeight) * clientHeight)
+    const maxThumbTop = clientHeight - thumbH
+    const maxScrollTop = scrollHeight - clientHeight
+    const onMove = (me: MouseEvent) => {
+      const delta = ((me.clientY - startY) / maxThumbTop) * maxScrollTop
+      scrollEl.scrollTop = Math.max(0, Math.min(maxScrollTop, startScrollTop + delta))
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  if (!visible) return null
+  return (
+    <div className="absolute right-1 top-2 bottom-2 w-1.5 rounded-full bg-zinc-800/50" style={{ pointerEvents: 'none' }}>
+      <div
+        className="absolute left-0 right-0 rounded-full bg-zinc-600 hover:bg-zinc-400 cursor-grab active:cursor-grabbing transition-colors"
+        style={{ ...thumbStyle, pointerEvents: 'auto' }}
+        onMouseDown={handleMouseDown}
+      />
     </div>
   )
 }
