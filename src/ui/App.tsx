@@ -226,7 +226,7 @@ export default function App() {
         )}
       </header>
 
-      <main className="flex-1 flex flex-col overflow-hidden min-h-0">
+      <main className="flex-1 flex flex-col min-h-0">
 
         {!loaded && (
           <div className="flex-1 flex items-center justify-center">
@@ -346,7 +346,7 @@ export default function App() {
 
         {/* ── RESULTS VIEW ── */}
         {view === 'results' && (
-          <div className="flex flex-col flex-1 min-h-0">
+          <>
             {/* Results header — 2 rows */}
             <div className="flex-shrink-0 border-b border-zinc-800">
               <div className="flex items-center justify-between px-4 py-2.5">
@@ -397,25 +397,24 @@ export default function App() {
               </div>
             )}
 
-            {/* Result group cards — absolute/inset pattern forces exact pixel height on scroll context */}
-            <div className="flex-1 min-h-0 relative">
-              <div
-                ref={resultsScrollRef}
-                tabIndex={-1}
-                className="absolute inset-0 overflow-y-auto touch-pan-y outline-none px-4 py-3 flex flex-col gap-3"
-                onWheel={(e) => e.stopPropagation()}
-              >
-                {resultGroups.map((group) => (
-                  <ResultGroupCard
-                    key={group.kind === 'set' ? group.header.node.id : group.item.node.id}
-                    group={group}
-                    checked={checked}
-                    editedNames={editedNames}
-                    onCheckChange={(id, val) => setChecked((prev) => ({ ...prev, [id]: val }))}
-                    onNameChange={(id, val) => setEditedNames((prev) => ({ ...prev, [id]: val }))}
-                  />
-                ))}
-              </div>
+            {/* Result group cards */}
+            <div
+              ref={resultsScrollRef}
+              tabIndex={-1}
+              style={{ flex: '1 1 0', minHeight: 0, overflowY: 'auto' }}
+              className="touch-pan-y outline-none px-4 py-3 flex flex-col gap-3"
+              onWheel={(e) => e.stopPropagation()}
+            >
+              {resultGroups.map((group) => (
+                <ResultGroupCard
+                  key={group.kind === 'set' ? group.header.node.id : group.item.node.id}
+                  group={group}
+                  checked={checked}
+                  editedNames={editedNames}
+                  onCheckChange={(id, val) => setChecked((prev) => ({ ...prev, [id]: val }))}
+                  onNameChange={(id, val) => setEditedNames((prev) => ({ ...prev, [id]: val }))}
+                />
+              ))}
             </div>
 
             {/* Apply footer */}
@@ -457,7 +456,7 @@ export default function App() {
                 </button>
               </div>
             )}
-          </div>
+          </>
         )}
       </main>
     </div>
