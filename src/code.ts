@@ -1,6 +1,6 @@
 /// <reference types="@figma/plugin-typings" />
 
-figma.showUI(__html__, { width: 420, height: 520, title: 'Nomenclate' })
+figma.showUI(__html__, { width: 420, height: 560, title: 'Nomenclate' })
 
 const PROXY_URL = 'https://nomenclate-proxy.vercel.app/api/analyze'
 const MAX_COMPONENTS = 50
@@ -20,31 +20,26 @@ type AuditResult = {
   justification: string
 }
 
-function getSelectionComponents(): ComponentData[] {
-  const result: ComponentData[] = []
-  for (const node of figma.currentPage.selection) {
-    if (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET') {
-      result.push({ id: node.id, name: node.name, type: node.type, pluginStatus: node.getPluginData('nomenclate-status') })
-      if (node.type === 'COMPONENT_SET') {
-        for (const child of (node as ComponentSetNode).children) {
-          if (child.type === 'COMPONENT') {
-            result.push({ id: child.id, name: child.name, type: 'COMPONENT', pluginStatus: child.getPluginData('nomenclate-status') })
-          }
-        }
-      }
-    }
-  }
-  return result
-}
+const allNodes = figma.currentPage.findAll(
+  (node) => node.type === 'COMPONENT' || node.type === 'COMPONENT_SET'
+)
 
-const allSelected = getSelectionComponents()
+const allComponents: ComponentData[] = allNodes.map((node) => ({
+  id: node.id,
+  name: node.name,
+  type: node.type as 'COMPONENT' | 'COMPONENT_SET',
+  pluginStatus: node.getPluginData('nomenclate-status'),
+}))
 
-if (allSelected.length === 0) {
-  figma.ui.postMessage({ type: 'SELECTION_ERROR', message: 'Select at least one component' })
-} else {
-  const components = allSelected.slice(0, MAX_COMPONENTS)
-  figma.ui.postMessage({ type: 'COMPONENTS_LOADED', components, total: allSelected.length })
-}
+figma.ui.postMessage({
+  type: 'COMPONENTS_LOADED',
+  components: allComponents.slice(0, MAX_COMPONENTS),
+  total: allComponents.length,
+})
+
+figma.on('selectionchange', () => {
+  figma.ui.postMessage({ type: 'SELECTION_CHANGED' })
+})
 
 figma.ui.onmessage = async (msg: {
   type: string
@@ -59,8 +54,7 @@ figma.ui.onmessage = async (msg: {
   }
 
   if (msg.type === 'AUDIT') {
-    const allComponents = msg.components ?? []
-    const toAudit = allComponents.slice(0, MAX_COMPONENTS)
+    const toAudit = (msg.components ?? []).slice(0, MAX_COMPONENTS)
     const convention = msg.convention ?? 'tailwind'
 
     try {
