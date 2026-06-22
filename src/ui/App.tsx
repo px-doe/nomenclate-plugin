@@ -102,7 +102,10 @@ export default function App() {
         setCheckedForAudit(initAuditChecks(groups))
         setLoaded(true)
       } else if (msg.type === 'AUDIT_RESULT') {
-        const results = msg.results
+        const results = msg.results.map((r) => ({
+          ...r,
+          status: normalizeStatus(r.status as string),
+        }))
         const initialChecked: Record<string, boolean> = {}
         const initialNames: Record<string, string> = {}
         for (const r of results) {
@@ -206,6 +209,13 @@ export default function App() {
           Nomenclate
         </h1>
         <p className="text-xs text-zinc-500 mt-1 leading-none">Naming convention auditor</p>
+        {loaded && components.length > 0 && view === 'list' && (
+          <p className="text-[10.5px] text-zinc-600 leading-[1.5] mt-2.5 pr-2">
+            Select components, pick a{' '}
+            <span className="text-violet-400/80">convention</span>
+            , then <span className="text-zinc-400 font-medium">Audit naming</span> — AI checks each name and suggests corrections you can apply directly in Figma.
+          </p>
+        )}
       </header>
 
       <main className="flex-1 flex flex-col overflow-hidden min-h-0">
@@ -370,6 +380,9 @@ export default function App() {
             {/* Apply footer */}
             {hasRenameTargets && (
               <div className="flex-shrink-0 px-4 pb-4 pt-2 border-t border-zinc-800 flex flex-col gap-2">
+                <p className="text-[10px] text-zinc-600 leading-snug">
+                  Check the names you want to rename, edit suggestions if needed, then apply.
+                </p>
                 {renameResult && (
                   <p className="text-[10px] text-zinc-400 leading-tight">
                     {renameResult.applied} renamed
@@ -555,19 +568,60 @@ function VariantContent({
   )
 }
 
+function normalizeStatus(s: string): AuditResult['status'] {
+  const v = (s ?? '').toLowerCase().replace(/_/g, '-')
+  if (v === 'conform') return 'conform'
+  if (v === 'non-conform') return 'non-conform'
+  return 'ambiguous'
+}
+
 function AuditSummary({ results }: { results: AuditResult[] }) {
   const conform = results.filter((r) => r.status === 'conform').length
   const nonConform = results.filter((r) => r.status === 'non-conform').length
   const ambiguous = results.filter((r) => r.status === 'ambiguous').length
   return (
-    <p className="text-[10px] text-zinc-600 leading-none">
-      <span className="text-green-400 font-medium">{conform}</span>{' '}
-      <span className="text-zinc-600">conform ·</span>{' '}
-      <span className="text-red-400 font-medium">{nonConform}</span>{' '}
-      <span className="text-zinc-600">non-conform ·</span>{' '}
-      <span className="text-amber-400 font-medium">{ambiguous}</span>{' '}
-      <span className="text-zinc-600">ambiguous</span>
-    </p>
+    <div className="flex items-center gap-3">
+      <SummaryBadge
+        count={conform}
+        dotClass="bg-green-400"
+        activeTextClass="text-green-400"
+        tooltip="Conform — name fully matches the selected convention"
+      />
+      <SummaryBadge
+        count={nonConform}
+        dotClass="bg-red-400"
+        activeTextClass="text-red-400"
+        tooltip="Non-conform — name clearly violates at least one convention rule"
+      />
+      <SummaryBadge
+        count={ambiguous}
+        dotClass="bg-amber-400"
+        activeTextClass="text-amber-400"
+        tooltip="Ambiguous — convention doesn't clearly cover this case, or context is missing"
+      />
+    </div>
+  )
+}
+
+function SummaryBadge({
+  count,
+  dotClass,
+  activeTextClass,
+  tooltip,
+}: {
+  count: number
+  dotClass: string
+  activeTextClass: string
+  tooltip: string
+}) {
+  const isEmpty = count === 0
+  return (
+    <span className="flex items-center gap-1.5 cursor-help" title={tooltip}>
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isEmpty ? 'bg-zinc-700' : dotClass}`} />
+      <span className={`text-[10px] font-medium tabular-nums leading-none ${isEmpty ? 'text-zinc-600' : activeTextClass}`}>
+        {count}
+      </span>
+    </span>
   )
 }
 
