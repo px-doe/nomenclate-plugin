@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface ComponentNode {
   id: string
@@ -87,6 +87,7 @@ export default function App() {
   const [editedNames, setEditedNames] = useState<Record<string, string>>({})
   const [renameResult, setRenameResult] = useState<{ applied: number; failed: string[] } | null>(null)
   const [selectionChanged, setSelectionChanged] = useState(false)
+  const resultsScrollRef = useRef<HTMLDivElement>(null)
 
   const listGroups = buildGroups(components, [])
 
@@ -136,6 +137,13 @@ export default function App() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    if (view === 'results') {
+      // Give focus to the scroll container so Figma Desktop routes wheel events to it
+      setTimeout(() => resultsScrollRef.current?.focus(), 50)
+    }
+  }, [view])
 
   const handleAudit = () => {
     const toAudit: ComponentNode[] = []
@@ -392,7 +400,9 @@ export default function App() {
             {/* Result group cards — absolute/inset pattern forces exact pixel height on scroll context */}
             <div className="flex-1 min-h-0 relative">
               <div
-                className="absolute inset-0 overflow-y-auto px-4 py-3 flex flex-col gap-3"
+                ref={resultsScrollRef}
+                tabIndex={-1}
+                className="absolute inset-0 overflow-y-auto touch-pan-y outline-none px-4 py-3 flex flex-col gap-3"
                 onWheel={(e) => e.stopPropagation()}
               >
                 {resultGroups.map((group) => (
