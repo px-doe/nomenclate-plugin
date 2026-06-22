@@ -274,7 +274,8 @@ export default function App() {
             )}
 
             {/* Component group cards */}
-            <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
+            <div className="flex-1 min-h-0 relative">
+             <div className="absolute inset-0 overflow-y-auto px-4 py-3 flex flex-col gap-2">
               {listGroups.map((group) => {
                 const groupId = group.kind === 'set' ? group.header.node.id : group.item.node.id
                 const name = group.kind === 'set' ? group.header.node.name : group.item.node.name
@@ -308,6 +309,7 @@ export default function App() {
                   </label>
                 )
               })}
+             </div>
             </div>
 
             {/* Audit button */}
@@ -387,21 +389,23 @@ export default function App() {
               </div>
             )}
 
-            {/* Result group cards */}
-            <div
-              className="flex-1 overflow-y-auto overscroll-y-contain min-h-0 px-4 py-3 flex flex-col gap-3"
-              onWheel={(e) => e.stopPropagation()}
-            >
-              {resultGroups.map((group) => (
-                <ResultGroupCard
-                  key={group.kind === 'set' ? group.header.node.id : group.item.node.id}
-                  group={group}
-                  checked={checked}
-                  editedNames={editedNames}
-                  onCheckChange={(id, val) => setChecked((prev) => ({ ...prev, [id]: val }))}
-                  onNameChange={(id, val) => setEditedNames((prev) => ({ ...prev, [id]: val }))}
-                />
-              ))}
+            {/* Result group cards — absolute/inset pattern forces exact pixel height on scroll context */}
+            <div className="flex-1 min-h-0 relative">
+              <div
+                className="absolute inset-0 overflow-y-auto px-4 py-3 flex flex-col gap-3"
+                onWheel={(e) => e.stopPropagation()}
+              >
+                {resultGroups.map((group) => (
+                  <ResultGroupCard
+                    key={group.kind === 'set' ? group.header.node.id : group.item.node.id}
+                    group={group}
+                    checked={checked}
+                    editedNames={editedNames}
+                    onCheckChange={(id, val) => setChecked((prev) => ({ ...prev, [id]: val }))}
+                    onNameChange={(id, val) => setEditedNames((prev) => ({ ...prev, [id]: val }))}
+                  />
+                ))}
+              </div>
             </div>
 
             {/* Apply footer */}
