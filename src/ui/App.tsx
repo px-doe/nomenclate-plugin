@@ -88,8 +88,10 @@ export default function App() {
   const [renameResult, setRenameResult] = useState<{ applied: number; failed: string[] } | null>(null)
   const [selectionChanged, setSelectionChanged] = useState(false)
   const [resultsScrollEl, setResultsScrollEl] = useState<HTMLDivElement | null>(null)
+  const [scrollAreaHeight, setScrollAreaHeight] = useState(300)
 
   const listGroups = buildGroups(components, [])
+  const hasRenameTargets = auditResults.some((r) => r.status !== 'conform')
 
   useEffect(() => {
     window.onmessage = (event: MessageEvent) => {
@@ -143,6 +145,26 @@ export default function App() {
       setTimeout(() => resultsScrollEl?.focus(), 50)
     }
   }, [view, resultsScrollEl])
+
+  useEffect(() => {
+    if (view !== 'results') { setScrollAreaHeight(300); return }
+    const compute = () => {
+      const wh = window.innerHeight || 680
+      const ph = document.querySelector('[data-ph]')?.getBoundingClientRect().height ?? 0
+      const rh = document.querySelector('[data-rh]')?.getBoundingClientRect().height ?? 0
+      const rf = document.querySelector('[data-rf]')?.getBoundingClientRect().height ?? 0
+      const rb = document.querySelector('[data-rb]')?.getBoundingClientRect().height ?? 0
+      const rbMargin = rb > 0 ? 12 : 0
+      setScrollAreaHeight(Math.max(150, wh - ph - rh - rf - rb - rbMargin))
+    }
+    const id = setTimeout(compute, 16)
+    const ro = new ResizeObserver(compute)
+    ;['[data-ph]', '[data-rh]', '[data-rf]', '[data-rb]'].forEach((sel) => {
+      const el = document.querySelector(sel)
+      if (el) ro.observe(el)
+    })
+    return () => { clearTimeout(id); ro.disconnect() }
+  }, [view, selectionChanged, hasRenameTargets])
 
   const handleAudit = () => {
     const toAudit: ComponentNode[] = []
@@ -202,7 +224,6 @@ export default function App() {
   }
 
   const checkedGroupCount = Object.values(checkedForAudit).filter(Boolean).length
-  const hasRenameTargets = auditResults.some((r) => r.status !== 'conform')
   const selectedCount = Object.values(checked).filter(Boolean).length
 
   const auditedIds = new Set(auditResults.map((r) => r.id))
@@ -211,7 +232,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-full bg-zinc-950 text-zinc-100 font-sans overflow-hidden select-none">
-      <header className="px-4 pt-4 pb-3 border-b border-zinc-800 flex-shrink-0">
+      <header data-ph className="px-4 pt-4 pb-3 border-b border-zinc-800 flex-shrink-0">
         <h1 className="text-sm font-semibold text-zinc-100 tracking-tight leading-none">
           Nomenclate
         </h1>
@@ -347,7 +368,7 @@ export default function App() {
         {view === 'results' && (
           <>
             {/* Results header — 2 rows */}
-            <div className="flex-shrink-0 border-b border-zinc-800">
+            <div data-rh className="flex-shrink-0 border-b border-zinc-800">
               <div className="flex items-center justify-between px-4 py-2.5">
                 <button
                   onClick={handleBack}
@@ -386,7 +407,7 @@ export default function App() {
 
             {/* Selection changed banner */}
             {selectionChanged && (
-              <div className="flex-shrink-0 mx-4 mt-3 flex items-center gap-2 bg-amber-950/40 border border-amber-800/50 rounded-xl px-3 py-2.5">
+              <div data-rb className="flex-shrink-0 mx-4 mt-3 flex items-center gap-2 bg-amber-950/40 border border-amber-800/50 rounded-xl px-3 py-2.5">
                 <svg className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
@@ -397,7 +418,7 @@ export default function App() {
             )}
 
             {/* Result group cards */}
-            <div className="flex-1 min-h-0 relative" style={{ minHeight: 0 }}>
+            <div style={{ position: 'relative', height: scrollAreaHeight, flexShrink: 0 }}>
               <div
                 ref={setResultsScrollEl}
                 tabIndex={-1}
@@ -420,7 +441,7 @@ export default function App() {
 
             {/* Apply footer */}
             {hasRenameTargets && (
-              <div className="flex-shrink-0 px-4 pb-4 pt-2 border-t border-zinc-800 flex flex-col gap-2">
+              <div data-rf className="flex-shrink-0 px-4 pb-4 pt-2 border-t border-zinc-800 flex flex-col gap-2">
                 <p className="text-[10px] text-zinc-600 leading-snug">
                   Check the names you want to rename, edit suggestions if needed, then apply.
                 </p>
