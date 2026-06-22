@@ -98,6 +98,17 @@ figma.ui.onmessage = async (msg: {
         failed.push(newName)
         continue
       }
+      // Guard: if this COMPONENT is a variant (current name has Property=Value pairs)
+      // but the suggested name lost that format, skip to avoid destroying variant properties.
+      if (
+        node.type === 'COMPONENT' &&
+        node.parent?.type === 'COMPONENT_SET' &&
+        node.name.includes('=') &&
+        !newName.includes('=')
+      ) {
+        failed.push(newName)
+        continue
+      }
       node.name = newName
       node.setPluginData('nomenclate-status', 'renamed')
       succeededIds.push(id)
